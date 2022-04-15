@@ -31,6 +31,7 @@ cv2.namedWindow('Color_Frame')
 cv2.namedWindow('Hue_Frame')
 cv2.setMouseCallback("Color_Frame", show_distance)
 #cv2.setMouseCallback("Hue_Frame", show_distance)
+## ok cool
 while True:
     
     
