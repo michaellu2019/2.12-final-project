@@ -19,7 +19,14 @@ NOTE Red is a special case since color goes past total range we have to split in
 Threshold one is from 169 - 179, Threshold 2 is from 0 - 10. In this case our range from middle is only 5 not 10
 Then we have to combine results of both thresholds using bitwise_or() operator
 """
-
+#Live Camera Information
+camera = cv2.VideoCapture(4) #6 is the port for my external camera
+# Show error if camera doesnt show up
+if not camera.isOpened():
+    raise Exception("Could not open video device")
+# Set picture Frame. High quality is 1280 by 720
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 #This function reads every image from the folder
 #TODO: Delete when switching to live camera
@@ -56,10 +63,11 @@ def brick_range(state):
     return lower, upper, cur_color
         
 
-file_path = './brick_pictures' ; # folder to read photos from
+#file_path = './brick_pictures' ; # folder to read photos from
+file_path = '/home/cvdarbeloff/Documents/2120/2.12-final-project/src/brick_pictures'
 images = load_img_from_folder(file_path)
-cur_img = images[9]
-hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
+#cur_img = images[7]
+
 # cv2.namedWindow('Color_Frame')
 # cv2.namedWindow('Hue_Frame')
 
@@ -79,6 +87,11 @@ if area > area_limit:
 
 #NOTE if we want to merge mask with original image we can use result = bitwise_and(cur_img, clean_mask, mask = NONE)
 while True:
+    ret, cur_img = camera.read() #get current image feed from camera
+    if not ret:
+        print("Error. Unable to capture Frame")
+        break
+    hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
     cv2.imshow('Color_Frame', cur_img)
     for i in range(4):
         if i == 3:
@@ -99,20 +112,20 @@ while True:
             clean_mask = denoise_img(threshold)
 
         area = np.count_nonzero(clean_mask)
-        print('Current area is: ' + str(area))
+        #print('Current area is: ' + str(area))
         if area > area_limit:
             #Count total number of white pixels in mask. If its above our area limit we found brick
-            print('We found a brick!')
-            print('Area is: ' + str(area))
+            print('We found a brick of color {}!'.format(color_state))
+            #print('Area is: ' + str(area))
             cv2.imshow('Hue_Frame', clean_mask)
             # cv2.imshow('Before_denoise', threshold)
             #This is where we would now update status and move to grabbing mode
             
-            img, contours, hierarchy = cv2.findContours(clean_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            contours, hierarchy = cv2.findContours(clean_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
             cv2.drawContours(cur_img, contours, -1, (0,255,0), 3)
             
-            M = cv2.moments(img)
+            M = cv2.moments(clean_mask)
             cx = int(M['m10']/M['m00'])
             cy = int(M['m01']/M['m00'])
             cv2.circle(cur_img, (cx, cy), 10, (255, 0, 0), -1)
@@ -163,4 +176,5 @@ while True:
     if key == 27 or key == ord("q"): 
         break
 
+camera.release()
 cv2.destroyAllWindows()
