@@ -53,7 +53,7 @@ def brick_range(state):
     return lower, upper, cur_color
         
 
-file_path = '/home/cvdarbeloff/Documents/2120/2.12-final-project/src/brick_pictures' ; # folder to read photos from
+file_path = './brick_pictures' ; # folder to read photos from
 images = load_img_from_folder(file_path)
 cur_img = images[8]
 hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
