@@ -32,12 +32,12 @@ def load_img_from_folder(folder_path):
     return pictures
 
 #This function removes isolated pixels
-def denoise_img(image, num_steps):
+def denoise_img(image):
     kernel = np.ones((3,3), np.uint8)
     #Step one erode
-    er = cv2.erode(image, kernel, iterations=1)
+    er = cv2.erode(image, kernel, iterations=3)
     #Step 2 dilate and fill missing values we removed
-    dil = cv2.dilate(er, kernel, iterations=1)
+    dil = cv2.dilate(er, kernel, iterations=3)
     
     dil2 = cv2.dilate(dil, kernel, iterations=1)
     er2 = cv2.erode(dil2, kernel, iterations=1)
@@ -58,7 +58,7 @@ def brick_range(state):
 
 file_path = './brick_pictures' ; # folder to read photos from
 images = load_img_from_folder(file_path)
-cur_img = images[10]
+cur_img = images[9]
 hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
 # cv2.namedWindow('Color_Frame')
 # cv2.namedWindow('Hue_Frame')
@@ -92,11 +92,11 @@ while True:
             threshold_1 = cv2.inRange(hsv, lower_range_1, upper_range_1 )
             threshold_2 = cv2.inRange(hsv, lower_range_2, upper_range_2 )
             threshold = cv2.bitwise_or(threshold_1, threshold_2, mask=None) # combine both threshold images
-            clean_mask = denoise_img(threshold, 5)
+            clean_mask = denoise_img(threshold)
         else:
             lower_range, upper_range, color_state = brick_range(i)
             threshold = cv2.inRange(hsv, lower_range, upper_range ) #Capture threshold of brick within set color range
-            clean_mask = denoise_img(threshold, 5)
+            clean_mask = denoise_img(threshold)
 
         area = np.count_nonzero(clean_mask)
         print('Current area is: ' + str(area))
@@ -104,27 +104,51 @@ while True:
             #Count total number of white pixels in mask. If its above our area limit we found brick
             print('We found a brick!')
             print('Area is: ' + str(area))
-            # cv2.imshow('Hue_Frame', clean_mask)
+            cv2.imshow('Hue_Frame', clean_mask)
             # cv2.imshow('Before_denoise', threshold)
             #This is where we would now update status and move to grabbing mode
             
-            img, contours, hierarchy = cv2.findContours(clean_mask, 1, 2)
+            img, contours, hierarchy = cv2.findContours(clean_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+            cv2.drawContours(cur_img, contours, -1, (0,255,0), 3)
             
-            # cnt = contours[0]
             M = cv2.moments(img)
             cx = int(M['m10']/M['m00'])
             cy = int(M['m01']/M['m00'])
-            print(cx, cy)
-            
-            # rect = cv2.minAreaRect(hierarchy)
-            # box = cv2.boxPoints(rect)
-            # box = np.int0(box)
-            # cv2.drawContours(cur_img,[box], 0, (0,0,255), 2)
-
-            # x,y,w,h = cv2.boundingRect(cnt)
-            # cv2.rectangle(cur_img,(x,y),(x+w,y+h),(0,255,0),2)
-
             cv2.circle(cur_img, (cx, cy), 10, (255, 0, 0), -1)
+            print("Blob Center:", cx, cy)
+
+            contours = np.array(contours)
+            contours = np.concatenate(contours).ravel()
+            contours = np.reshape(contours, (len(contours)//2, 2))
+            
+            rect = cv2.minAreaRect(np.array(contours))
+            box = cv2.boxPoints(rect)
+            box = np.int0(box)
+            cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
+            
+            # print(box)
+            highest_point_index = np.argmin(box, axis=0)[1]
+            highest_point_first_neighbor_index = highest_point_index + 1 if highest_point_index + 1 < len(box) else 0
+            highest_point_second_neighbor_index = highest_point_index - 1 if highest_point_index - 1 > -1 else len(box) - 1
+            highest_point = box[highest_point_index]
+            highest_point_first_neighbor = box[highest_point_first_neighbor_index]
+            highest_point_second_neighbor = box[highest_point_second_neighbor_index]
+            first_side = np.linalg.norm(highest_point - highest_point_first_neighbor)
+            second_side = np.linalg.norm(highest_point - highest_point_second_neighbor)
+            cv2.circle(cur_img, (highest_point[0], highest_point[1]), 5, (0, 255, 255), -1)
+            if first_side > second_side:
+                cv2.circle(cur_img, (highest_point_first_neighbor[0], highest_point_first_neighbor[1]), 5, (0, 0, 255), -1)
+                print("Long side is side 1, between", highest_point, highest_point_first_neighbor, first_side)
+                brick_angle = np.arctan2(highest_point_first_neighbor[1] - highest_point[1], highest_point_first_neighbor[0] - highest_point[0]) * (180.0/np.pi)
+            else:
+                cv2.circle(cur_img, (highest_point_second_neighbor[0], highest_point_second_neighbor[1]), 5, (0, 0, 255), -1)
+                print("Long side is side 2, between", highest_point, highest_point_second_neighbor, second_side)
+                brick_angle = np.arctan2(highest_point_second_neighbor[1] - highest_point[1], highest_point_second_neighbor[0] - highest_point[0]) * (180.0/np.pi)
+            
+            min_brick_angle = min(brick_angle, abs(180 - brick_angle))
+            print("Brick Angle:", brick_angle, min_brick_angle)
+
             cv2.imshow("Center_Detection", cur_img)
 
         else:
