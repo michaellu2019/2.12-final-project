@@ -8,7 +8,7 @@ import numpy as np
 
 # Sofware flags
 DEBUG = True
-USE_CAMERA_FEED = False
+USE_CAMERA_FEED = True
 DISPLAY_IMAGES = True
 
 # Color isolation parameters
@@ -63,7 +63,6 @@ def brick_hue_range(state):
         
 def init():
     if USE_CAMERA_FEED:
-        # TODO: Call method to use live camera feed?
         #Live Camera Information
         camera = cv2.VideoCapture(4) #4 is the port for my external camera
         # Show error if camera doesnt show up
