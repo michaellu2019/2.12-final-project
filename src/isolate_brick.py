@@ -4,11 +4,14 @@ from dis import dis
 import cv2
 import os
 from cv2 import bitwise_and
+from cv2 import HoughCircles
+from cv2 import HOUGH_GRADIENT
+from cv2 import COLOR_BGR2GRAY
 import numpy as np
 
 # Sofware flags
-DEBUG = True
-USE_CAMERA_FEED = True
+DEBUG = False
+USE_CAMERA_FEED = False
 DISPLAY_IMAGES = True
 
 # Color isolation parameters
@@ -74,15 +77,16 @@ def init():
     else:
         file_path = './brick_pictures'
         images = load_img_from_folder(file_path)
-        cur_img = images[9]
+        cur_img = images[0]
         hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
 
     # NOTE: if we want to merge mask with original image we can use result = bitwise_and(cur_img, clean_mask, mask = NONE)
     while True:
-        ret, cur_img = camera.read() #get current image feed from camera
-        if not ret:
-            print("Error. Unable to capture Frame")
-            break
+        if USE_CAMERA_FEED:
+            ret, cur_img = camera.read() #get current image feed from camera
+            if not ret:
+                print("Error. Unable to capture Frame")
+                break
         hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
         for i in range(4):
             if i == 3:
@@ -104,12 +108,9 @@ def init():
             clean_mask = denoise_img(threshold)
             area = np.count_nonzero(clean_mask)
             if area > area_limit:
-                if DISPLAY_IMAGES:
-                    three_chan_clean_mask = cv2.cvtColor(clean_mask, cv2.COLOR_GRAY2BGR)
-                    displayed_img = np.concatenate((cur_img, three_chan_clean_mask), axis=1)
-                    cv2.imshow('Detected Brick and Denoised Brick Mask', displayed_img)
                 
-                # Calculate brick center
+                
+                #Calculate brick center
                 M = cv2.moments(clean_mask)
                 cx = int(M['m10']/M['m00'])
                 cy = int(M['m01']/M['m00'])
@@ -120,15 +121,31 @@ def init():
                 contours = contour_results[-2]
                 cv2.drawContours(cur_img, contours, -1, (0, 255, 0), 3)
 
-                contours = np.array(contours)
+                #contours = np.array(contours)
+                #print(contours.shape)
+
                 contours = np.concatenate(contours).ravel()
                 contours = np.reshape(contours, (len(contours)//2, 2))
-                
+                # gray = cv2.GaussianBlur( clean_mask, (5, 5), 0 )
+                # circles = HoughCircles(gray, HOUGH_GRADIENT, 1.2, 10, param1=100,param2=60,minRadius=0, maxRadius=300)
+
+                # circles = np.uint8(np.around(circles))
+                # for j in circles[0,:]:
+                #     # draw the outer circle
+                #     cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
+                #     # draw the center of the circle
+
+                # for j,cnt in enumerate(contours):
+                #     print(j, len(cnt))
+                #     color = ((j * 35) % 255, (j * 50) % 255, 255)
+                #     cv2.drawContours(cur_img, cnt, -1, color, 3)
+
                 rect = cv2.minAreaRect(np.array(contours))
                 box = cv2.boxPoints(rect)
                 box = np.int0(box)
                 cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
                 
+                #Logic to get rectangle angle
                 highest_point_index = np.argmin(box, axis=0)[1]
                 highest_point_neighbor_1_index = highest_point_index + 1 if highest_point_index + 1 < len(box) else 0
                 highest_point_neighbor_2_index = highest_point_index - 1 if highest_point_index - 1 > -1 else len(box) - 1
@@ -148,6 +165,12 @@ def init():
                     brick_angle = np.arctan2(highest_point_neighbor_2[1] - highest_point[1], highest_point_neighbor_2[0] - highest_point[0]) * (180.0/np.pi)
                 
                 min_brick_angle = min(brick_angle, abs(180 - brick_angle))
+                if DISPLAY_IMAGES:
+                    #three_chan_clean_mask = cv2.cvtColor(clean_mask, cv2.COLOR_GRAY2BGR)
+                    #displayed_img = np.concatenate((cur_img, three_chan_clean_mask), axis=1)
+                    cv2.imshow('Detected Brick', clean_mask)
+                    cv2.imshow('Color_frame', cur_img)
+                    #cv2.imshow('Detected Brick and Denoised Brick Mask', displayed_img)
                 if DEBUG:
                     print('{} brick detected with area of {}, center at ({}, {}), rotated by {:.3f}, bounding box of {}.'
                     .format(color_state.capitalize(), area, cx, cy, min_brick_angle, [[box[i][0], box[i][1]] for i in range(len(box))]))

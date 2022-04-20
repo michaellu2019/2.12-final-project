@@ -25,7 +25,7 @@ def load_img_from_folder(folder_path):
 point = (0,0) # start point with arbitrary value
 file_path = './brick_pictures' ; # folder to read photos from
 images = load_img_from_folder(file_path)
-cur_img = images[8]
+cur_img = images[0]
 hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
 cv2.namedWindow('Color_Frame')
 cv2.namedWindow('Hue_Frame')
