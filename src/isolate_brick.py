@@ -7,11 +7,12 @@ from cv2 import bitwise_and
 from cv2 import HoughCircles
 from cv2 import HOUGH_GRADIENT
 from cv2 import COLOR_BGR2GRAY
+from cv2 import boundingRect
 import numpy as np
 
 # Sofware flags
-DEBUG = False
-USE_CAMERA_FEED = False
+DEBUG = True
+USE_CAMERA_FEED = True
 DISPLAY_IMAGES = True
 
 # Color isolation parameters
@@ -109,23 +110,28 @@ def init():
             area = np.count_nonzero(clean_mask)
             if area > area_limit:
                 
-                
-                #Calculate brick center
-                M = cv2.moments(clean_mask)
-                cx = int(M['m10']/M['m00'])
-                cy = int(M['m01']/M['m00'])
-                cv2.circle(cur_img, (cx, cy), 10, (255, 0, 0), -1)
+                #lets create an output image merging 2 photos
+                output = cv2.bitwise_and(cur_img,cur_img, mask=clean_mask)
+              
                 
                 # Find contours of brick to get bounding box
-                contour_results = cv2.findContours(clean_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                contours = contour_results[-2]
-                cv2.drawContours(cur_img, contours, -1, (0, 255, 0), 3)
+                if (int(cv2.__version__[0]) > 3):
+                    contours, higherarch = cv2.findContours(clean_mask, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                else:
+                    _ , contours, higherarch = cv2.findContours(clean_mask, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                
+                #contours = contour_results[-2]
+    
+                #print(contours.shape)
+
+                #cv2.drawContours(cur_img, contours, -1, (0, 255, 0), 3)
 
                 #contours = np.array(contours)
                 #print(contours.shape)
 
-                contours = np.concatenate(contours).ravel()
-                contours = np.reshape(contours, (len(contours)//2, 2))
+                #contours = np.concatenate(contours).ravel()
+                #contours = np.reshape(contours, (len(contours)//2, 2))
+                #print(contours.shape)
                 # gray = cv2.GaussianBlur( clean_mask, (5, 5), 0 )
                 # circles = HoughCircles(gray, HOUGH_GRADIENT, 1.2, 10, param1=100,param2=60,minRadius=0, maxRadius=300)
 
@@ -135,42 +141,60 @@ def init():
                 #     cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
                 #     # draw the center of the circle
 
+
+                #Apptempt to find largest contour
+                if len(contours) != 0:
+                    c = max(contours, key=cv2.contourArea)
+                    x,y,w,h = cv2.boundingRect(c)
+                    #cv2.rectangle(cur_img,(x,y), (x+w, y+h), (0,255,0),2)
+                    # epsilon = 0.02 * cv2.arcLength(c, True)
+                    # approximations = cv2.approxPolyDP(c, epsilon, True)
+                    # cv2.drawContours(cur_img, [approximations], 0, (0,255,0), 3)
+                    rect = cv2.minAreaRect(np.array(c))
+                    box = cv2.boxPoints(rect)
+                    box = np.int0(box)
+                    cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
+                      #Calculate brick center
+                    M = cv2.moments(c)
+                    cx = int(M['m10']/M['m00'])
+                    cy = int(M['m01']/M['m00'])
+                    cv2.circle(cur_img, (cx, cy), 10, (255, 0, 0), -1)
+                    
+                    #Logic to get rectangle angle
+                    highest_point_index = np.argmin(box, axis=0)[1]
+                    highest_point_neighbor_1_index = highest_point_index + 1 if highest_point_index + 1 < len(box) else 0
+                    highest_point_neighbor_2_index = highest_point_index - 1 if highest_point_index - 1 > -1 else len(box) - 1
+                    highest_point = box[highest_point_index]
+                    highest_point_neighbor_1 = box[highest_point_neighbor_1_index]
+                    highest_point_neighbor_2 = box[highest_point_neighbor_2_index]
+                    first_side = np.linalg.norm(highest_point - highest_point_neighbor_1)
+                    second_side = np.linalg.norm(highest_point - highest_point_neighbor_2)
+                    cv2.circle(cur_img, (highest_point[0], highest_point[1]), 5, (0, 255, 255), -1)
+                    if first_side > second_side:
+                        cv2.circle(cur_img, (highest_point_neighbor_1[0], highest_point_neighbor_1[1]), 5, (0, 0, 255), -1)
+                        # print("Long side is side 1, between", highest_point, highest_point_neighbor_1, first_side)
+                        brick_angle = np.arctan2(highest_point_neighbor_1[1] - highest_point[1], highest_point_neighbor_1[0] - highest_point[0]) * (180.0/np.pi)
+                    else:
+                        cv2.circle(cur_img, (highest_point_neighbor_2[0], highest_point_neighbor_2[1]), 5, (0, 0, 255), -1)
+                        # print("Long side is side 2, between", highest_point, highest_point_neighbor_2, second_side)
+                        brick_angle = np.arctan2(highest_point_neighbor_2[1] - highest_point[1], highest_point_neighbor_2[0] - highest_point[0]) * (180.0/np.pi)
+                    
+                    min_brick_angle = min(brick_angle, abs(180 - brick_angle))
+
                 # for j,cnt in enumerate(contours):
                 #     print(j, len(cnt))
-                #     color = ((j * 35) % 255, (j * 50) % 255, 255)
-                #     cv2.drawContours(cur_img, cnt, -1, color, 3)
+                #     #color = ((j * 35) % 255, (j * 50) % 255, 255)
+                #     epsilon = 0.01 * cv2.arcLength(cnt, True)
+                #     approximations = cv2.approxPolyDP(cnt, epsilon, True)
+                #     cv2.drawContours(cur_img, [approximations], 0, (0,255,0), 3)
+                #     cv2.waitKey(0)
+                #     cv2.imshow('Color_frame', cur_img)
 
-                rect = cv2.minAreaRect(np.array(contours))
-                box = cv2.boxPoints(rect)
-                box = np.int0(box)
-                cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
                 
-                #Logic to get rectangle angle
-                highest_point_index = np.argmin(box, axis=0)[1]
-                highest_point_neighbor_1_index = highest_point_index + 1 if highest_point_index + 1 < len(box) else 0
-                highest_point_neighbor_2_index = highest_point_index - 1 if highest_point_index - 1 > -1 else len(box) - 1
-                highest_point = box[highest_point_index]
-                highest_point_neighbor_1 = box[highest_point_neighbor_1_index]
-                highest_point_neighbor_2 = box[highest_point_neighbor_2_index]
-                first_side = np.linalg.norm(highest_point - highest_point_neighbor_1)
-                second_side = np.linalg.norm(highest_point - highest_point_neighbor_2)
-                cv2.circle(cur_img, (highest_point[0], highest_point[1]), 5, (0, 255, 255), -1)
-                if first_side > second_side:
-                    cv2.circle(cur_img, (highest_point_neighbor_1[0], highest_point_neighbor_1[1]), 5, (0, 0, 255), -1)
-                    # print("Long side is side 1, between", highest_point, highest_point_neighbor_1, first_side)
-                    brick_angle = np.arctan2(highest_point_neighbor_1[1] - highest_point[1], highest_point_neighbor_1[0] - highest_point[0]) * (180.0/np.pi)
-                else:
-                    cv2.circle(cur_img, (highest_point_neighbor_2[0], highest_point_neighbor_2[1]), 5, (0, 0, 255), -1)
-                    # print("Long side is side 2, between", highest_point, highest_point_neighbor_2, second_side)
-                    brick_angle = np.arctan2(highest_point_neighbor_2[1] - highest_point[1], highest_point_neighbor_2[0] - highest_point[0]) * (180.0/np.pi)
-                
-                min_brick_angle = min(brick_angle, abs(180 - brick_angle))
                 if DISPLAY_IMAGES:
-                    #three_chan_clean_mask = cv2.cvtColor(clean_mask, cv2.COLOR_GRAY2BGR)
-                    #displayed_img = np.concatenate((cur_img, three_chan_clean_mask), axis=1)
                     cv2.imshow('Detected Brick', clean_mask)
                     cv2.imshow('Color_frame', cur_img)
-                    #cv2.imshow('Detected Brick and Denoised Brick Mask', displayed_img)
+                    
                 if DEBUG:
                     print('{} brick detected with area of {}, center at ({}, {}), rotated by {:.3f}, bounding box of {}.'
                     .format(color_state.capitalize(), area, cx, cy, min_brick_angle, [[box[i][0], box[i][1]] for i in range(len(box))]))
