@@ -11,7 +11,7 @@ from cv2 import boundingRect
 import numpy as np
 
 # Sofware flags
-DEBUG = True
+DEBUG = False
 USE_CAMERA_FEED = True
 DISPLAY_IMAGES = True
 
@@ -120,9 +120,7 @@ def init():
                 else:
                     _ , contours, higherarch = cv2.findContours(clean_mask, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
                 
-                #contours = contour_results[-2]
-    
-                #print(contours.shape)
+                
 
                 #cv2.drawContours(cur_img, contours, -1, (0, 255, 0), 3)
 
@@ -153,7 +151,37 @@ def init():
                     rect = cv2.minAreaRect(np.array(c))
                     box = cv2.boxPoints(rect)
                     box = np.int0(box)
+                    print(box)
                     cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
+
+                    #Logic for creating mask 
+                    #corner diag
+                    corner_pointx1, corner_pointy1 = box[0]
+                    corner_pointx2, corner_pointy2 = box[2]
+                    y1 = max(0, corner_pointy1)
+                    y2 = max(0, corner_pointy2)
+                    x1 = max(0, min(corner_pointx1, corner_pointx2))
+                    x2 = max(0, max(corner_pointx1, corner_pointx2))
+
+                    dim = box[2] - box[0]
+                    mask = np.zeros_like(cur_img)
+                    cv2.rectangle(mask, (x1,y1), (x2,y2), (255,255,255), -1)
+                    masked_img = cv2.bitwise_and(cur_img, mask)
+                    
+                    grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
+                    blur = cv2.GaussianBlur(grey, (5,5),0)
+                    #Abstract edges
+                    canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
+                    cv2.imshow('Canny_frame', canny)
+                    #Hough Circles logic
+                    circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 10, param1=90,param2=50,minRadius=20, maxRadius=100)
+                    if circles is not None:
+                        circles = np.uint8(np.around(circles))
+                        for j in circles[0,:]:
+                            # draw the outer circle
+                            cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
+                            # draw the center of the circle
+                    
                       #Calculate brick center
                     M = cv2.moments(c)
                     cx = int(M['m10']/M['m00'])
@@ -169,13 +197,13 @@ def init():
                     highest_point_neighbor_2 = box[highest_point_neighbor_2_index]
                     first_side = np.linalg.norm(highest_point - highest_point_neighbor_1)
                     second_side = np.linalg.norm(highest_point - highest_point_neighbor_2)
-                    cv2.circle(cur_img, (highest_point[0], highest_point[1]), 5, (0, 255, 255), -1)
+                    #cv2.circle(cur_img, (highest_point[0], highest_point[1]), 5, (0, 255, 255), -1)
                     if first_side > second_side:
-                        cv2.circle(cur_img, (highest_point_neighbor_1[0], highest_point_neighbor_1[1]), 5, (0, 0, 255), -1)
+                        #cv2.circle(cur_img, (highest_point_neighbor_1[0], highest_point_neighbor_1[1]), 5, (0, 0, 255), -1)
                         # print("Long side is side 1, between", highest_point, highest_point_neighbor_1, first_side)
                         brick_angle = np.arctan2(highest_point_neighbor_1[1] - highest_point[1], highest_point_neighbor_1[0] - highest_point[0]) * (180.0/np.pi)
                     else:
-                        cv2.circle(cur_img, (highest_point_neighbor_2[0], highest_point_neighbor_2[1]), 5, (0, 0, 255), -1)
+                        #cv2.circle(cur_img, (highest_point_neighbor_2[0], highest_point_neighbor_2[1]), 5, (0, 0, 255), -1)
                         # print("Long side is side 2, between", highest_point, highest_point_neighbor_2, second_side)
                         brick_angle = np.arctan2(highest_point_neighbor_2[1] - highest_point[1], highest_point_neighbor_2[0] - highest_point[0]) * (180.0/np.pi)
                     

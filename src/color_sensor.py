@@ -27,7 +27,7 @@ while True:
     if key == ord('p'):
         #Capture image
         #Create name for new image
-        img_name = "exp_photo_{}.jpg".format(img_counter)
+        img_name = "combined_photo_{}.jpg".format(img_counter)
         # store image in correct folder
         cv2.imwrite(os.path.join(file_path, img_name), frame)
         #increment counter for new images
