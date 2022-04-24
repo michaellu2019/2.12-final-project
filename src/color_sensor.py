@@ -12,7 +12,7 @@ camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 # Set up window
 cv2.namedWindow('Color')
-img_counter = 5 #counter for # of images we want to save
+img_counter = 0 #counter for # of images we want to save
 file_path = '/home/cvdarbeloff/Documents/2120/2.12-final-project/src/brick_pictures'; # folder to save photos to
 
 # Read in picture to a frame
@@ -27,7 +27,7 @@ while True:
     if key == ord('p'):
         #Capture image
         #Create name for new image
-        img_name = "multi_photo_{}.jpg".format(img_counter)
+        img_name = "combined_photo_{}.jpg".format(img_counter)
         # store image in correct folder
         cv2.imwrite(os.path.join(file_path, img_name), frame)
         #increment counter for new images
