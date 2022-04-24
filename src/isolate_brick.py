@@ -1,6 +1,6 @@
 # This Python Script will take given brick color ranges and return isolated image of just that brick
 # as well as the brick center location and orientation
-from dis import dis
+import rospy
 import cv2
 import os
 from cv2 import bitwise_and
@@ -12,7 +12,7 @@ import numpy as np
 
 # Sofware flags
 DEBUG = False
-USE_CAMERA_FEED = True
+USE_CAMERA_FEED = False
 DISPLAY_IMAGES = True
 
 # Color isolation parameters
@@ -34,11 +34,11 @@ Then we have to combine results of both thresholds using bitwise_or() operator
 #This function reads every image from the folder
 #TODO: Delete when switching to live camera
 def load_img_from_folder(folder_path):
-    pictures = []
+    pictures = {}
     for filename in os.listdir(folder_path):
         img = cv2.imread(os.path.join(folder_path, filename))
         if img is not None:
-            pictures.append(img)
+            pictures[filename] = img
     return pictures
 
 # This function removes isolated pixels
@@ -78,7 +78,7 @@ def init():
     else:
         file_path = './brick_pictures'
         images = load_img_from_folder(file_path)
-        cur_img = images[0]
+        cur_img = images["Brick_photo_6.jpg"]
         hsv = cv2.cvtColor(cur_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
 
     # NOTE: if we want to merge mask with original image we can use result = bitwise_and(cur_img, clean_mask, mask = NONE)
