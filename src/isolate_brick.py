@@ -120,8 +120,25 @@ def init():
                 else:
                     _ , contours, higherarch = cv2.findContours(clean_mask, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
                 
-                
+                #NOTE: TESTING Section
+                # This generates canny edge detection over our detected brick
+                grey = cv2.cvtColor(output, cv2.COLOR_BGR2GRAY)
+                blur = cv2.GaussianBlur(grey, (5,5),0)
+                #Abstract edges
 
+                canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
+                cv2.imshow('Canny_frame', canny)
+                cnt_2, _ = cv2.findContours(canny, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                if len(cnt_2) != 0:
+                    c_2 = max(cnt_2, key=cv2.contourArea)
+                    rect_2 = cv2.minAreaRect(c_2)
+                    box_2 = cv2.boxPoints(rect_2)
+                    box_2 = np.int0(box_2)
+                    copy_img = cur_img.copy()
+                    cv2.drawContours(copy_img, [box_2], 0, (0,0,255), 2)
+                    cv2.imshow('Copyframe', copy_img)
+
+                #NOTE: End of testing section can remove this block 
                 #cv2.drawContours(cur_img, contours, -1, (0, 255, 0), 3)
 
                 #contours = np.array(contours)
@@ -129,32 +146,17 @@ def init():
 
                 #contours = np.concatenate(contours).ravel()
                 #contours = np.reshape(contours, (len(contours)//2, 2))
-                #print(contours.shape)
-                # gray = cv2.GaussianBlur( clean_mask, (5, 5), 0 )
-                # circles = HoughCircles(gray, HOUGH_GRADIENT, 1.2, 10, param1=100,param2=60,minRadius=0, maxRadius=300)
-
-                # circles = np.uint8(np.around(circles))
-                # for j in circles[0,:]:
-                #     # draw the outer circle
-                #     cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
-                #     # draw the center of the circle
 
 
                 #Apptempt to find largest contour
                 if len(contours) != 0:
                     c = max(contours, key=cv2.contourArea)
                     x,y,w,h = cv2.boundingRect(c)
-                    #cv2.rectangle(cur_img,(x,y), (x+w, y+h), (0,255,0),2)
-                    # epsilon = 0.02 * cv2.arcLength(c, True)
-                    # approximations = cv2.approxPolyDP(c, epsilon, True)
-                    # cv2.drawContours(cur_img, [approximations], 0, (0,255,0), 3)
-                    rect = cv2.minAreaRect(np.array(c))
+                    rect = cv2.minAreaRect(c)
                     box = cv2.boxPoints(rect)
                     box = np.int0(box)
-                    print(box)
                     cv2.drawContours(cur_img, [box], 0, (0,0,255), 2)
-
-                    #Logic for creating mask 
+                    #Logic for creating mask around contour box
                     #corner diag
                     corner_pointx1, corner_pointy1 = box[0]
                     corner_pointx2, corner_pointy2 = box[2]
@@ -163,24 +165,26 @@ def init():
                     x1 = max(0, min(corner_pointx1, corner_pointx2))
                     x2 = max(0, max(corner_pointx1, corner_pointx2))
 
-                    dim = box[2] - box[0]
                     mask = np.zeros_like(cur_img)
                     cv2.rectangle(mask, (x1,y1), (x2,y2), (255,255,255), -1)
                     masked_img = cv2.bitwise_and(cur_img, mask)
-                    
-                    grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
-                    blur = cv2.GaussianBlur(grey, (5,5),0)
+                   
+                    #NOTE: This bluring is all for hough circles we can remove
+                    #grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
+                    #blur = cv2.GaussianBlur(grey, (5,5),0)
                     #Abstract edges
-                    canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
-                    cv2.imshow('Canny_frame', canny)
+
+                    #canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
+                    #canny = cv2.Canny(clean_mask, 10, 80, apertureSize = 3)
+                    #cv2.imshow('Canny_frame', canny)
                     #Hough Circles logic
-                    circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 10, param1=90,param2=50,minRadius=20, maxRadius=100)
-                    if circles is not None:
-                        circles = np.uint8(np.around(circles))
-                        for j in circles[0,:]:
-                            # draw the outer circle
-                            cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
-                            # draw the center of the circle
+                    # circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 100)
+                    # if circles is not None:
+                    #     circles = np.uint8(np.around(circles))
+                    #     for j in circles[0,:]:
+                    #         # draw the outer circle
+                    #         cv2.circle(cur_img,(j[0],j[1]),j[2],(0,0,0),2)
+                    #         # draw the center of the circle
                     
                       #Calculate brick center
                     M = cv2.moments(c)
@@ -209,14 +213,6 @@ def init():
                     
                     min_brick_angle = min(brick_angle, abs(180 - brick_angle))
 
-                # for j,cnt in enumerate(contours):
-                #     print(j, len(cnt))
-                #     #color = ((j * 35) % 255, (j * 50) % 255, 255)
-                #     epsilon = 0.01 * cv2.arcLength(cnt, True)
-                #     approximations = cv2.approxPolyDP(cnt, epsilon, True)
-                #     cv2.drawContours(cur_img, [approximations], 0, (0,255,0), 3)
-                #     cv2.waitKey(0)
-                #     cv2.imshow('Color_frame', cur_img)
 
                 
                 if DISPLAY_IMAGES:
