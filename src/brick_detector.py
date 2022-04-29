@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 
 # This Python Script will take given brick color ranges and return isolated image of just that brick
 # as well as the brick center location and orientation
@@ -21,7 +21,7 @@ import os
 
 # Sofware flags
 DEBUG = True
-USE_CAMERA_FEED = False
+USE_CAMERA_FEED = True
 DISPLAY_IMAGES = True
 
 # Color isolation parameters
@@ -41,7 +41,8 @@ Then we have to combine results of both thresholds using bitwise_or() operator
 
 class BrickDetector:
     def __init__(self):
-        self.image_sub = rospy.Subscriber("/zed/zed_node/rgb/image_rect_color", Image, self.camera_callback)
+        self.color_image_sub = rospy.Subscriber("/cam_1/color/image_raw", Image, self.color_camera_callback)
+        self.depth_image_sub = rospy.Subscriber("/cam_1/aligned_depth_to_color/image_raw", Image, self.depth_camera_callback)
 
         self.image_debug_pub = rospy.Publisher('/brick_debug_image', Image, queue_size=10)
         self.brick_detector_pub = rospy.Publisher("brick_detector", Pose, queue_size=10)   
@@ -49,20 +50,33 @@ class BrickDetector:
         self.brick_pose = Pose()
 
         if USE_CAMERA_FEED:
-            #Live Camera Information
-            self.camera = cv2.VideoCapture(4) #4 is the port for my external camera
-            # Show error if camera doesnt show up
-            if not self.camera.isOpened():
-                raise Exception("Could not open video device")
-            # Set picture Frame. High quality is 1280 by 720
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            pass
+            # #Live Camera Information
+            # self.camera = cv2.VideoCapture(4) #4 is the port for my external camera
+            # # Show error if camera doesnt show up
+            # if not self.camera.isOpened():
+            #     raise Exception("Could not open video device")
+            # # Set picture Frame. High quality is 1280 by 720
+            # self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            # self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         else:
             file_path = "./brick_pictures"
             images = self.load_img_from_folder(file_path)
-            self.raw_img = images["Brick_photo_10.jpg"]
+            self.color_img = images["Brick_photo_10.jpg"]
         
-        rospy.Timer(rospy.Duration(1.0/20.0), self.detect_brick)
+        # rospy.Timer(rospy.Duration(1.0/20.0), self.detect_brick)
+        self.bridge = CvBridge()
+
+        # self.initialized_depth_values = False
+        # self.initialized_depth_values = True
+
+        self.layer_height = 200
+        self.layer_tolerance = 100
+        self.max_depth = 1850
+        self.depth_thresholds = [float(i) for i in range(self.max_depth, -1, -self.layer_height)][::-1]
+        print(self.depth_thresholds)
+        self.layer_num = 0
+
 
     #This function reads every image from the folder
     #TODO: Delete when switching to live camera
@@ -98,20 +112,53 @@ class BrickDetector:
         upper = np.array([(cur_h + color_range), 255, 255], dtype=np.uint8)
         return lower, upper, cur_color
 
-    def camera_callback(self, image_msg):
-        self.raw_img = self.bridge.imgmsg_to_cv2(image_msg, "bgr8")
+    def color_camera_callback(self, image_msg):
+        self.color_img = self.bridge.imgmsg_to_cv2(image_msg, "bgr8")
         self.detect_brick(None)
+
+    def depth_camera_callback(self, image_msg):
+        # self.depth_img = self.bridge.imgmsg_to_cv2(image_msg, "16UC1")
+        # cv2.imshow("Depth Image", self.depth_img)
+        # self.depth_img = np.clip(self.depth_img, self.depth_thresholds[0], self.depth_thresholds[1])
+
+        # The depth image is a single-channel float32 image
+        # the values is the distance in mm in z axis
+        cv_image = self.bridge.imgmsg_to_cv2(image_msg, "32FC1")
+        # Convert the depth image to a Numpy array since most cv2 functions
+        # require Numpy arrays.
+        cv_image_array = np.array(cv_image, dtype = np.dtype("f8"))
+        # Normalize the depth image to fall between 0 (black) and 1 (white)
+        # http://docs.ros.org/electric/api/rosbag_video/html/bag__to__video_8cpp_source.html lines 95-125
+        cv_image_norm = cv2.normalize(cv_image_array, cv_image_array, 0, 1, cv2.NORM_MINMAX)
+        # Resize to the desired size
+        # cv_image_resized = cv2.resize(cv_image_norm, self.color_img.shape, interpolation = cv2.INTER_CUBIC)
+        self.depth_img = cv_image_norm
+        self.depth_matrix = self.depth_img * self.depth_thresholds[-1]
+        cv2.imshow("Depth Image", self.depth_img)
+
+        layer_num = max(0, min(self.layer_num, len(self.depth_thresholds) - 2))
+        thresholds = np.array([self.depth_thresholds[layer_num], self.depth_thresholds[layer_num + 1]])
+        img_thresholds = thresholds/self.max_depth
+        print("DT", self.depth_thresholds, img_thresholds)
+
+        # depth_img_max = np.max(self.depth_img)
+        # self.depth_img = (np.array(image_msg)/depth_img_max) * 255.0
+        # self.depth_img = cv2.normalize(self.depth_img, None, alpha=125,beta=255, norm_type=cv2.NORM_MINMAX)
+        # self.depth_imsg = self.adjust_gamma(self.depth_img, 2.0)
+        # self.depth_img = cv2.inRange(self.depth_img, self.depth_thresholds[0], self.depth_thresholds[1])
+
+        # print(self.depth_img.shape)
 
             
     def detect_brick(self, event):
-        # NOTE: if we want to merge mask with original image we can use result = bitwise_and(raw_img, clean_mask, mask = NONE)
+        # NOTE: if we want to merge mask with original image we can use result = bitwise_and(color_img, clean_mask, mask = NONE)
         # while True:
-        if USE_CAMERA_FEED:
-            ret, self.raw_img = self.camera.read() #get current image feed from camera
-            if not ret:
-                print("Error. Unable to capture Frame")
-                return
-        self.hsv = cv2.cvtColor(self.raw_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
+        # if USE_CAMERA_FEED:
+        #     ret, self.color_img = self.camera.read() #get current image feed from camera
+        #     if not ret:
+        #         print("Error. Unable to capture Frame")
+        #         return
+        self.hsv = cv2.cvtColor(self.color_img, cv2.COLOR_BGR2HSV) # converts photo from RGB to HSV
         for i in range(4):
             if i == 3:
                 # Special Case we have a red brick
@@ -134,7 +181,7 @@ class BrickDetector:
             if area > area_limit:
                 
                 #lets create an output image merging 2 photos
-                output = cv2.bitwise_and(self.raw_img, self.raw_img, mask=clean_mask)
+                output = cv2.bitwise_and(self.color_img, self.color_img, mask=clean_mask)
             
                 
                 # Find contours of brick to get bounding box
@@ -151,13 +198,16 @@ class BrickDetector:
 
                 canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
                 # cv2.imshow('Canny_frame', canny)``
-                cnt_2, _ = cv2.findContours(canny, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                if (int(cv2.__version__[0]) > 3):
+                    cnt_2, _ = cv2.findContours(canny, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                else:
+                    _ , cnt_2, _ = cv2.findContours(canny, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
                 if len(cnt_2) != 0:
                     c_2 = max(cnt_2, key=cv2.contourArea)
                     rect_2 = cv2.minAreaRect(c_2)
                     box_2 = cv2.boxPoints(rect_2)
                     box_2 = np.int0(box_2)
-                    copy_img = self.raw_img.copy()
+                    copy_img = self.color_img.copy()
                     cv2.drawContours(copy_img, [box_2], 0, (0,0,255), 2)
 
                 #Apptempt to find largest contour
@@ -168,7 +218,7 @@ class BrickDetector:
                     box = cv2.boxPoints(rect)
                     box = np.int0(box)
                     # print(box)
-                    cv2.drawContours(self.raw_img, [box], 0, (0,0,255), 2)
+                    cv2.drawContours(self.color_img, [box], 0, (0,0,255), 2)
 
                     #Logic for creating mask 
                     #corner diag
@@ -179,15 +229,15 @@ class BrickDetector:
                     x1 = max(0, min(corner_pointx1, corner_pointx2))
                     x2 = max(0, max(corner_pointx1, corner_pointx2))
 
-                    mask = np.zeros_like(self.raw_img)
+                    mask = np.zeros_like(self.color_img)
                     cv2.rectangle(mask, (x1,y1), (x2,y2), (255,255,255), -1)
-                    masked_img = cv2.bitwise_and(self.raw_img, mask)
+                    masked_img = cv2.bitwise_and(self.color_img, mask)
                     
                     #Calculate brick center
                     M = cv2.moments(c)
                     cx = int(M["m10"]/M["m00"])
                     cy = int(M["m01"]/M["m00"])
-                    cv2.circle(self.raw_img, (cx, cy), 10, (255, 0, 0), -1)
+                    cv2.circle(self.color_img, (cx, cy), 10, (255, 0, 0), -1)
                     
                     #Logic to get rectangle angle
                     highest_point_index = np.argmin(box, axis=0)[1]
@@ -220,7 +270,7 @@ class BrickDetector:
                 
                 if DISPLAY_IMAGES:
                     cv2.imshow("Detected Brick", clean_mask)
-                    cv2.imshow("Color_frame", self.raw_img)
+                    cv2.imshow("Color_frame", self.color_img)
                     
                 if DEBUG:
                     print("{} brick detected with area of {}, center at ({}, {}), rotated by {:.3f}, bounding box of {}."
