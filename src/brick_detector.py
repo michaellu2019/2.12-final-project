@@ -4,6 +4,7 @@
 # as well as the brick center location and orientation
 import rospy
 from geometry_msgs.msg import Pose
+from sensor_msgs.msg import Image
 
 import tf
 
@@ -13,6 +14,7 @@ from cv2 import HoughCircles
 from cv2 import HOUGH_GRADIENT
 from cv2 import COLOR_BGR2GRAY
 from cv2 import boundingRect
+from cv_bridge import CvBridge, CvBridgeError
 
 import numpy as np
 import os
@@ -39,6 +41,9 @@ Then we have to combine results of both thresholds using bitwise_or() operator
 
 class BrickDetector:
     def __init__(self):
+        self.image_sub = rospy.Subscriber("/zed/zed_node/rgb/image_rect_color", Image, self.camera_callback)
+
+        self.image_debug_pub = rospy.Publisher('/brick_debug_image', Image, queue_size=10)
         self.brick_detector_pub = rospy.Publisher("brick_detector", Pose, queue_size=10)   
 
         self.brick_pose = Pose()
@@ -92,6 +97,11 @@ class BrickDetector:
         lower = np.array([(cur_h - color_range), 100, 100], dtype=np.uint8)
         upper = np.array([(cur_h + color_range), 255, 255], dtype=np.uint8)
         return lower, upper, cur_color
+
+    def camera_callback(self, image_msg):
+        self.raw_img = self.bridge.imgmsg_to_cv2(image_msg, "bgr8")
+        self.detect_brick(None)
+
             
     def detect_brick(self, event):
         # NOTE: if we want to merge mask with original image we can use result = bitwise_and(raw_img, clean_mask, mask = NONE)
@@ -149,36 +159,11 @@ class BrickDetector:
                     box_2 = np.int0(box_2)
                     copy_img = self.raw_img.copy()
                     cv2.drawContours(copy_img, [box_2], 0, (0,0,255), 2)
-                    # cv2.imshow('Copyframe', copy_img)
-
-                #NOTE: End of testing section can remove this block 
-
-                #cv2.drawContours(self.raw_img, contours, -1, (0, 255, 0), 3)
-
-                #contours = np.array(contours)
-                #print(contours.shape)
-
-                #contours = np.concatenate(contours).ravel()
-                #contours = np.reshape(contours, (len(contours)//2, 2))
-                #print(contours.shape)
-                # gray = cv2.GaussianBlur( clean_mask, (5, 5), 0 )
-                # circles = HoughCircles(gray, HOUGH_GRADIENT, 1.2, 10, param1=100,param2=60,minRadius=0, maxRadius=300)
-
-                # circles = np.uint8(np.around(circles))
-                # for j in circles[0,:]:
-                #     # draw the outer circle
-                #     cv2.circle(self.raw_img,(j[0],j[1]),j[2],(0,0,0),2)
-                #     # draw the center of the circle
-
 
                 #Apptempt to find largest contour
                 if len(contours) != 0:
                     c = max(contours, key=cv2.contourArea)
                     x,y,w,h = cv2.boundingRect(c)
-                    #cv2.rectangle(self.raw_img,(x,y), (x+w, y+h), (0,255,0),2)
-                    # epsilon = 0.02 * cv2.arcLength(c, True)
-                    # approximations = cv2.approxPolyDP(c, epsilon, True)
-                    # cv2.drawContours(self.raw_img, [approximations], 0, (0,255,0), 3)
                     rect = cv2.minAreaRect(np.array(c))
                     box = cv2.boxPoints(rect)
                     box = np.int0(box)
@@ -197,21 +182,6 @@ class BrickDetector:
                     mask = np.zeros_like(self.raw_img)
                     cv2.rectangle(mask, (x1,y1), (x2,y2), (255,255,255), -1)
                     masked_img = cv2.bitwise_and(self.raw_img, mask)
-                    
-                    #NOTE: This bluring is all for hough circles we can remove
-                    # grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
-                    # blur = cv2.GaussianBlur(grey, (5,5),0)
-                    # #Abstract edges
-                    # canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
-                    # cv2.imshow("Canny_frame", canny)
-                    # #Hough Circles logic
-                    # circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 10, param1=90,param2=50,minRadius=20, maxRadius=100)
-                    # if circles is not None:
-                    #     circles = np.uint8(np.around(circles))
-                    #     for j in circles[0,:]:
-                    #         # draw the outer circle
-                    #         cv2.circle(self.raw_img,(j[0],j[1]),j[2],(0,0,0),2)
-                    #         # draw the center of the circle
                     
                     #Calculate brick center
                     M = cv2.moments(c)
@@ -236,14 +206,6 @@ class BrickDetector:
                     
                     min_brick_angle = min(brick_angle, abs(180 - brick_angle))
 
-                # for j,cnt in enumerate(contours):
-                #     print(j, len(cnt))
-                #     #color = ((j * 35) % 255, (j * 50) % 255, 255)
-                #     epsilon = 0.01 * cv2.arcLength(cnt, True)
-                #     approximations = cv2.approxPolyDP(cnt, epsilon, True)
-                #     cv2.drawContours(self.raw_img, [approximations], 0, (0,255,0), 3)
-                #     cv2.waitKey(0)
-                #     cv2.imshow("Color_frame", self.raw_img)
                 self.brick_pose.position.x = cx
                 self.brick_pose.position.y = cy
                 self.brick_pose.position.z = -1.0
@@ -263,16 +225,10 @@ class BrickDetector:
                 if DEBUG:
                     print("{} brick detected with area of {}, center at ({}, {}), rotated by {:.3f}, bounding box of {}."
                     .format(color_state.capitalize(), area, cx, cy, min_brick_angle, [[box[i][0], box[i][1]] for i in range(len(box))]))
-            # else:
-            #     if DEBUG:
-            #         print("No Brick of color: {} found".format(color_state))
         key = cv2.waitKey(1)
-        # if key == 27 or key == ord("q"): 
-        #     return
 
 
 if __name__ == "__main__":
     rospy.init_node("brick_detector")
     brick_detector = BrickDetector()
     rospy.spin()
-    # cv2.destroyAllWindows()
