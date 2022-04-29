@@ -1,19 +1,24 @@
+#!/usr/bin/env python3
+
 # This Python Script will take given brick color ranges and return isolated image of just that brick
 # as well as the brick center location and orientation
 import rospy
 from geometry_msgs.msg import Pose
-#!/usr/bin/env python2
+
+import tf
+
 import cv2
-import os
 from cv2 import bitwise_and
 from cv2 import HoughCircles
 from cv2 import HOUGH_GRADIENT
 from cv2 import COLOR_BGR2GRAY
 from cv2 import boundingRect
+
 import numpy as np
+import os
 
 # Sofware flags
-DEBUG = False
+DEBUG = True
 USE_CAMERA_FEED = False
 DISPLAY_IMAGES = True
 
@@ -36,6 +41,8 @@ class BrickDetector:
     def __init__(self):
         self.brick_detector_pub = rospy.Publisher("brick_detector", Pose, queue_size=10)   
 
+        self.brick_pose = Pose()
+
         if USE_CAMERA_FEED:
             #Live Camera Information
             self.camera = cv2.VideoCapture(4) #4 is the port for my external camera
@@ -48,10 +55,9 @@ class BrickDetector:
         else:
             file_path = "./brick_pictures"
             images = self.load_img_from_folder(file_path)
-            self.raw_img = images["Brick_photo_6.jpg"]
+            self.raw_img = images["Brick_photo_10.jpg"]
         
         rospy.Timer(rospy.Duration(1.0/20.0), self.detect_brick)
-        # self.detect_brick(None)
 
     #This function reads every image from the folder
     #TODO: Delete when switching to live camera
@@ -127,7 +133,25 @@ class BrickDetector:
                 else:
                     _ , contours, higherarch = cv2.findContours(clean_mask, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
                 
-                
+                #NOTE: TESTING Section
+                # This generates canny edge detection over our detected brick
+                grey = cv2.cvtColor(output, cv2.COLOR_BGR2GRAY)
+                blur = cv2.GaussianBlur(grey, (5,5),0)
+                #Abstract edges
+
+                canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
+                # cv2.imshow('Canny_frame', canny)``
+                cnt_2, _ = cv2.findContours(canny, mode=cv2.RETR_CCOMP, method=cv2.CHAIN_APPROX_SIMPLE)
+                if len(cnt_2) != 0:
+                    c_2 = max(cnt_2, key=cv2.contourArea)
+                    rect_2 = cv2.minAreaRect(c_2)
+                    box_2 = cv2.boxPoints(rect_2)
+                    box_2 = np.int0(box_2)
+                    copy_img = self.raw_img.copy()
+                    cv2.drawContours(copy_img, [box_2], 0, (0,0,255), 2)
+                    # cv2.imshow('Copyframe', copy_img)
+
+                #NOTE: End of testing section can remove this block 
 
                 #cv2.drawContours(self.raw_img, contours, -1, (0, 255, 0), 3)
 
@@ -158,7 +182,7 @@ class BrickDetector:
                     rect = cv2.minAreaRect(np.array(c))
                     box = cv2.boxPoints(rect)
                     box = np.int0(box)
-                    print(box)
+                    # print(box)
                     cv2.drawContours(self.raw_img, [box], 0, (0,0,255), 2)
 
                     #Logic for creating mask 
@@ -170,24 +194,24 @@ class BrickDetector:
                     x1 = max(0, min(corner_pointx1, corner_pointx2))
                     x2 = max(0, max(corner_pointx1, corner_pointx2))
 
-                    dim = box[2] - box[0]
                     mask = np.zeros_like(self.raw_img)
                     cv2.rectangle(mask, (x1,y1), (x2,y2), (255,255,255), -1)
                     masked_img = cv2.bitwise_and(self.raw_img, mask)
                     
-                    grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
-                    blur = cv2.GaussianBlur(grey, (5,5),0)
-                    #Abstract edges
-                    canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
-                    cv2.imshow("Canny_frame", canny)
-                    #Hough Circles logic
-                    circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 10, param1=90,param2=50,minRadius=20, maxRadius=100)
-                    if circles is not None:
-                        circles = np.uint8(np.around(circles))
-                        for j in circles[0,:]:
-                            # draw the outer circle
-                            cv2.circle(self.raw_img,(j[0],j[1]),j[2],(0,0,0),2)
-                            # draw the center of the circle
+                    #NOTE: This bluring is all for hough circles we can remove
+                    # grey = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
+                    # blur = cv2.GaussianBlur(grey, (5,5),0)
+                    # #Abstract edges
+                    # canny = cv2.Canny(blur, 10, 80, apertureSize = 3)
+                    # cv2.imshow("Canny_frame", canny)
+                    # #Hough Circles logic
+                    # circles = HoughCircles(canny, HOUGH_GRADIENT, 1.2, 10, param1=90,param2=50,minRadius=20, maxRadius=100)
+                    # if circles is not None:
+                    #     circles = np.uint8(np.around(circles))
+                    #     for j in circles[0,:]:
+                    #         # draw the outer circle
+                    #         cv2.circle(self.raw_img,(j[0],j[1]),j[2],(0,0,0),2)
+                    #         # draw the center of the circle
                     
                     #Calculate brick center
                     M = cv2.moments(c)
@@ -220,6 +244,16 @@ class BrickDetector:
                 #     cv2.drawContours(self.raw_img, [approximations], 0, (0,255,0), 3)
                 #     cv2.waitKey(0)
                 #     cv2.imshow("Color_frame", self.raw_img)
+                self.brick_pose.position.x = cx
+                self.brick_pose.position.y = cy
+                self.brick_pose.position.z = -1.0
+                quaternion = tf.transformations.quaternion_from_euler(0, 0, min_brick_angle)
+                self.brick_pose.orientation.x = quaternion[0]
+                self.brick_pose.orientation.y = quaternion[1]
+                self.brick_pose.orientation.z = quaternion[2]
+                self.brick_pose.orientation.w = quaternion[3]
+
+                self.brick_detector_pub.publish(self.brick_pose)
 
                 
                 if DISPLAY_IMAGES:
@@ -233,8 +267,8 @@ class BrickDetector:
             #     if DEBUG:
             #         print("No Brick of color: {} found".format(color_state))
         key = cv2.waitKey(1)
-        if key == 27 or key == ord("q"): 
-            return
+        # if key == 27 or key == ord("q"): 
+        #     return
 
 
 if __name__ == "__main__":
